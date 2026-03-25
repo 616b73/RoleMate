@@ -1,0 +1,26 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# Local tooling caches
+.m2/
+
+# Java / Maven build output
+target/
+**/target/
+out/
+*.class
+*.log
+
+# Environment-specific project files
+backend/settings.xml
