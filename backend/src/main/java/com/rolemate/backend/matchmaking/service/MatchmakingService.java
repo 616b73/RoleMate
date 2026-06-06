@@ -5,43 +5,82 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rolemate.backend.matchmaking.model.ClientEvent;
 import com.rolemate.backend.matchmaking.model.ClientEventType;
 import com.rolemate.backend.matchmaking.model.MatchSession;
+import com.rolemate.backend.matchmaking.model.RoleCategory;
 import com.rolemate.backend.matchmaking.model.ServerEvent;
 import com.rolemate.backend.matchmaking.model.ServerEventType;
 import com.rolemate.backend.matchmaking.model.UserConnection;
 import java.io.IOException;
-import java.time.Instant;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Queue;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+/**
+ * Core matchmaking service responsible for:
+ * <ul>
+ *   <li>Managing WebSocket connections</li>
+ *   <li>Role-based queue management</li>
+ *   <li>Automatic partner matching</li>
+ *   <li>Chat message relay between matched users</li>
+ *   <li>Next-partner and disconnect flows</li>
+ * </ul>
+ *
+ * <p>Session lifecycle is delegated to {@link SessionService}.
+ * Uses per-role {@link ReentrantLock} for fine-grained concurrency control.
+ */
 @Service
 public class MatchmakingService {
 
-    private final ObjectMapper objectMapper;
-    private final Map<String, UserConnection> connectedUsers = new ConcurrentHashMap<>();
-    private final Map<String, Queue<UserConnection>> waitingQueues = new ConcurrentHashMap<>();
-    private final Map<String, MatchSession> sessionsById = new ConcurrentHashMap<>();
-    private final Map<String, String> sessionIdByUserId = new ConcurrentHashMap<>();
+    private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
-    public MatchmakingService(ObjectMapper objectMapper) {
+    private final ObjectMapper objectMapper;
+    private final SessionService sessionService;
+
+    /** All currently connected users, keyed by WebSocket session ID. */
+    private final Map<String, UserConnection> connectedUsers = new ConcurrentHashMap<>();
+
+    /** Waiting queues grouped by normalized role name. */
+    private final Map<String, Queue<UserConnection>> waitingQueues = new ConcurrentHashMap<>();
+
+    /** Per-role locks for fine-grained concurrency on queue operations. */
+    private final Map<String, ReentrantLock> roleLocks = new ConcurrentHashMap<>();
+
+    /** Global lock for cross-role operations (disconnect cleanup). */
+    private final ReentrantLock globalLock = new ReentrantLock();
+
+    public MatchmakingService(ObjectMapper objectMapper, SessionService sessionService) {
         this.objectMapper = objectMapper;
+        this.sessionService = sessionService;
     }
 
+    /**
+     * Registers a new WebSocket connection and sends a CONNECTED event to the client.
+     */
     public void registerConnection(WebSocketSession webSocketSession) throws IOException {
         UserConnection connection = new UserConnection(webSocketSession.getId(), webSocketSession);
         connectedUsers.put(connection.getUserId(), connection);
+
+        log.info("Connection registered: userId={}", connection.getUserId());
 
         ServerEvent event = new ServerEvent(ServerEventType.CONNECTED, "Connected to RoleMate matchmaking");
         event.setPartnerId(connection.getUserId());
         sendEvent(webSocketSession, event);
     }
 
+    /**
+     * Routes an inbound client event to the appropriate handler.
+     */
     public void handleEvent(WebSocketSession webSocketSession, String payload) throws IOException {
         ClientEvent event = objectMapper.readValue(payload, ClientEvent.class);
 
@@ -58,43 +97,72 @@ public class MatchmakingService {
         }
     }
 
-    public synchronized void handleDisconnect(WebSocketSession webSocketSession) throws IOException {
-        UserConnection disconnectedUser = connectedUsers.remove(webSocketSession.getId());
-        if (disconnectedUser == null) {
-            return;
-        }
+    /**
+     * Handles a user disconnection: removes from queues, ends active session,
+     * and notifies the partner.
+     */
+    public void handleDisconnect(WebSocketSession webSocketSession) throws IOException {
+        globalLock.lock();
+        try {
+            UserConnection disconnectedUser = connectedUsers.remove(webSocketSession.getId());
+            if (disconnectedUser == null) {
+                return;
+            }
 
-        removeFromWaitingQueues(disconnectedUser.getUserId());
-        endSessionForUser(disconnectedUser.getUserId(), true);
+            log.info("User disconnected: userId={}", disconnectedUser.getUserId());
+            removeFromWaitingQueues(disconnectedUser.getUserId());
+            endSessionAndNotifyPartner(disconnectedUser.getUserId());
+        } finally {
+            globalLock.unlock();
+        }
     }
 
-    private synchronized void joinQueue(WebSocketSession webSocketSession, ClientEvent event) throws IOException {
+    // ──────────────────────────────────────────────────────────────
+    // Queue & Matching
+    // ──────────────────────────────────────────────────────────────
+
+    private void joinQueue(WebSocketSession webSocketSession, ClientEvent event) throws IOException {
         UserConnection connection = connectedUsers.get(webSocketSession.getId());
         if (connection == null) {
             sendError(webSocketSession, "Connection not registered");
             return;
         }
 
-        String normalizedRole = normalizeRole(event.getRole());
-        if (normalizedRole == null) {
-            sendError(webSocketSession, "Role is required for JOIN_QUEUE");
+        // Validate role against known categories
+        RoleCategory roleCategory = RoleCategory.fromDisplayName(event.getRole());
+        if (roleCategory == null) {
+            String supportedRoles = Arrays.stream(RoleCategory.values())
+                    .map(RoleCategory::getDisplayName)
+                    .collect(Collectors.joining(", "));
+            sendError(webSocketSession, "Unsupported role. Supported roles: " + supportedRoles);
             return;
         }
 
-        removeFromWaitingQueues(connection.getUserId());
-        endSessionForUser(connection.getUserId(), true);
+        String normalizedRole = roleCategory.getDisplayName();
+        ReentrantLock roleLock = roleLocks.computeIfAbsent(normalizedRole, k -> new ReentrantLock());
 
-        connection.setRole(normalizedRole);
-        waitingQueues.computeIfAbsent(normalizedRole, ignored -> new ConcurrentLinkedQueue<>()).offer(connection);
+        roleLock.lock();
+        try {
+            // Clean up any existing state before joining
+            removeFromWaitingQueues(connection.getUserId());
+            endSessionAndNotifyPartner(connection.getUserId());
 
-        ServerEvent queuedEvent = new ServerEvent(ServerEventType.QUEUED, "Added to queue");
-        queuedEvent.setRole(normalizedRole);
-        sendEvent(webSocketSession, queuedEvent);
+            connection.setRole(normalizedRole);
+            waitingQueues.computeIfAbsent(normalizedRole, ignored -> new ConcurrentLinkedQueue<>()).offer(connection);
 
-        attemptMatch(normalizedRole);
+            log.info("User joined queue: userId={}, role={}", connection.getUserId(), normalizedRole);
+
+            ServerEvent queuedEvent = new ServerEvent(ServerEventType.QUEUED, "Added to queue");
+            queuedEvent.setRole(normalizedRole);
+            sendEvent(webSocketSession, queuedEvent);
+
+            attemptMatch(normalizedRole);
+        } finally {
+            roleLock.unlock();
+        }
     }
 
-    private synchronized void attemptMatch(String role) throws IOException {
+    private void attemptMatch(String role) throws IOException {
         Queue<UserConnection> queue = waitingQueues.get(role);
         if (queue == null) {
             return;
@@ -110,12 +178,10 @@ public class MatchmakingService {
             return;
         }
 
-        String matchId = UUID.randomUUID().toString();
-        MatchSession matchSession = new MatchSession(matchId, role, first.getUserId(), second.getUserId(), Instant.now());
+        MatchSession matchSession = sessionService.createSession(first, second, role);
 
-        sessionsById.put(matchId, matchSession);
-        sessionIdByUserId.put(first.getUserId(), matchId);
-        sessionIdByUserId.put(second.getUserId(), matchId);
+        log.info("Match found: sessionId={}, userA={}, userB={}, role={}",
+                matchSession.getSessionId(), first.getUserId(), second.getUserId(), role);
 
         sendMatchFound(first, second, matchSession);
         sendMatchFound(second, first, matchSession);
@@ -128,44 +194,36 @@ public class MatchmakingService {
                 return null;
             }
 
-            if (candidate.getSocketSession().isOpen() && !sessionIdByUserId.containsKey(candidate.getUserId())) {
+            if (candidate.getSocketSession().isOpen() && !sessionService.isInSession(candidate.getUserId())) {
                 return candidate;
             }
         }
     }
 
-    private void sendMatchFound(UserConnection recipient, UserConnection partner, MatchSession matchSession) throws IOException {
-        ServerEvent event = new ServerEvent(ServerEventType.MATCH_FOUND, "Match found");
-        event.setSessionId(matchSession.getSessionId());
-        event.setRole(matchSession.getRole());
-        event.setPartnerId(partner.getUserId());
-        sendEvent(recipient.getSocketSession(), event);
-    }
+    // ──────────────────────────────────────────────────────────────
+    // Chat
+    // ──────────────────────────────────────────────────────────────
 
-    private synchronized void sendChatMessage(WebSocketSession webSocketSession, ClientEvent event) throws IOException {
+    private void sendChatMessage(WebSocketSession webSocketSession, ClientEvent event) throws IOException {
         String content = sanitizeContent(event.getContent());
         if (content == null) {
             sendError(webSocketSession, "Message content is required");
             return;
         }
 
-        String currentSessionId = sessionIdByUserId.get(webSocketSession.getId());
-        if (currentSessionId == null) {
+        Optional<MatchSession> sessionOpt = sessionService.getSessionForUser(webSocketSession.getId());
+        if (sessionOpt.isEmpty()) {
             sendError(webSocketSession, "You are not currently matched");
             return;
         }
 
-        MatchSession matchSession = sessionsById.get(currentSessionId);
-        if (matchSession == null) {
-            sendError(webSocketSession, "Session not found");
-            return;
-        }
-
+        MatchSession matchSession = sessionOpt.get();
         String partnerId = matchSession.getPartnerId(webSocketSession.getId());
         UserConnection partner = connectedUsers.get(partnerId);
+
         if (partner == null || !partner.getSocketSession().isOpen()) {
             sendError(webSocketSession, "Partner is no longer connected");
-            endSessionForUser(webSocketSession.getId(), true);
+            endSessionAndNotifyPartner(webSocketSession.getId());
             return;
         }
 
@@ -176,7 +234,11 @@ public class MatchmakingService {
         sendEvent(partner.getSocketSession(), chatEvent);
     }
 
-    private synchronized void handleNextUser(WebSocketSession webSocketSession) throws IOException {
+    // ──────────────────────────────────────────────────────────────
+    // Next Partner
+    // ──────────────────────────────────────────────────────────────
+
+    private void handleNextUser(WebSocketSession webSocketSession) throws IOException {
         UserConnection connection = connectedUsers.get(webSocketSession.getId());
         if (connection == null) {
             sendError(webSocketSession, "Connection not registered");
@@ -184,45 +246,58 @@ public class MatchmakingService {
         }
 
         String role = connection.getRole();
-        endSessionForUser(connection.getUserId(), true);
+
+        log.info("User requested next partner: userId={}, role={}", connection.getUserId(), role);
+
+        endSessionAndNotifyPartner(connection.getUserId());
 
         if (role != null) {
-            waitingQueues.computeIfAbsent(role, ignored -> new ConcurrentLinkedQueue<>()).offer(connection);
-            ServerEvent queuedEvent = new ServerEvent(ServerEventType.QUEUED, "Looking for next partner");
-            queuedEvent.setRole(role);
-            sendEvent(webSocketSession, queuedEvent);
-            attemptMatch(role);
+            ReentrantLock roleLock = roleLocks.computeIfAbsent(role, k -> new ReentrantLock());
+            roleLock.lock();
+            try {
+                waitingQueues.computeIfAbsent(role, ignored -> new ConcurrentLinkedQueue<>()).offer(connection);
+
+                ServerEvent queuedEvent = new ServerEvent(ServerEventType.QUEUED, "Looking for next partner");
+                queuedEvent.setRole(role);
+                sendEvent(webSocketSession, queuedEvent);
+
+                attemptMatch(role);
+            } finally {
+                roleLock.unlock();
+            }
         }
     }
 
-    private synchronized void endSessionForUser(String userId, boolean notifyPartner) throws IOException {
-        String currentSessionId = sessionIdByUserId.remove(userId);
-        if (currentSessionId == null) {
+    // ──────────────────────────────────────────────────────────────
+    // Session Lifecycle Helpers
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Ends any active session for the user and notifies both parties.
+     */
+    private void endSessionAndNotifyPartner(String userId) throws IOException {
+        Optional<MatchSession> sessionOpt = sessionService.endSessionForUser(userId);
+        if (sessionOpt.isEmpty()) {
             return;
         }
 
-        MatchSession matchSession = sessionsById.remove(currentSessionId);
-        if (matchSession == null) {
-            return;
-        }
+        MatchSession session = sessionOpt.get();
 
-        String partnerId = matchSession.getPartnerId(userId);
-        sessionIdByUserId.remove(partnerId);
-
+        // Notify the user who initiated the end
         UserConnection currentUser = connectedUsers.get(userId);
         if (currentUser != null && currentUser.getSocketSession().isOpen()) {
-            ServerEvent event = new ServerEvent(ServerEventType.SESSION_ENDED, "Session ended");
-            event.setSessionId(currentSessionId);
-            sendEvent(currentUser.getSocketSession(), event);
+            ServerEvent endedEvent = new ServerEvent(ServerEventType.SESSION_ENDED, "Session ended");
+            endedEvent.setSessionId(session.getSessionId());
+            sendEvent(currentUser.getSocketSession(), endedEvent);
         }
 
-        if (notifyPartner) {
-            UserConnection partner = connectedUsers.get(partnerId);
-            if (partner != null && partner.getSocketSession().isOpen()) {
-                ServerEvent event = new ServerEvent(ServerEventType.PARTNER_LEFT, "Partner left the session");
-                event.setSessionId(currentSessionId);
-                sendEvent(partner.getSocketSession(), event);
-            }
+        // Notify the partner
+        String partnerId = session.getPartnerId(userId);
+        UserConnection partner = connectedUsers.get(partnerId);
+        if (partner != null && partner.getSocketSession().isOpen()) {
+            ServerEvent partnerEvent = new ServerEvent(ServerEventType.PARTNER_LEFT, "Partner left the session");
+            partnerEvent.setSessionId(session.getSessionId());
+            sendEvent(partner.getSocketSession(), partnerEvent);
         }
     }
 
@@ -230,6 +305,48 @@ public class MatchmakingService {
         for (Queue<UserConnection> queue : waitingQueues.values()) {
             queue.removeIf(connection -> Objects.equals(connection.getUserId(), userId));
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Monitoring / Status
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Returns a snapshot of current queue sizes per role.
+     */
+    public Map<String, Integer> getQueueStatus() {
+        Map<String, Integer> status = new LinkedHashMap<>();
+        for (RoleCategory role : RoleCategory.values()) {
+            Queue<UserConnection> queue = waitingQueues.get(role.getDisplayName());
+            status.put(role.getDisplayName(), queue != null ? queue.size() : 0);
+        }
+        return status;
+    }
+
+    /**
+     * Returns the number of currently connected users.
+     */
+    public int getConnectedUserCount() {
+        return connectedUsers.size();
+    }
+
+    /**
+     * Returns the number of active match sessions.
+     */
+    public int getActiveSessionCount() {
+        return sessionService.getActiveSessionCount();
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Event Sending Utilities
+    // ──────────────────────────────────────────────────────────────
+
+    private void sendMatchFound(UserConnection recipient, UserConnection partner, MatchSession matchSession) throws IOException {
+        ServerEvent event = new ServerEvent(ServerEventType.MATCH_FOUND, "Match found");
+        event.setSessionId(matchSession.getSessionId());
+        event.setRole(matchSession.getRole());
+        event.setPartnerId(partner.getUserId());
+        sendEvent(recipient.getSocketSession(), event);
     }
 
     private void sendError(WebSocketSession session, String message) throws IOException {
@@ -246,13 +363,6 @@ public class MatchmakingService {
         } catch (JsonProcessingException exception) {
             throw new IOException("Failed to serialize websocket event", exception);
         }
-    }
-
-    private String normalizeRole(String role) {
-        if (role == null || role.isBlank()) {
-            return null;
-        }
-        return role.trim();
     }
 
     private String sanitizeContent(String content) {
