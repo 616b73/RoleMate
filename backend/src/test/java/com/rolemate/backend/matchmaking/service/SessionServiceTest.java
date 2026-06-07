@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.rolemate.backend.matchmaking.model.MatchSession;
 import com.rolemate.backend.matchmaking.model.UserConnection;
+import com.rolemate.backend.persistence.service.PersistenceService;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,10 +17,12 @@ import org.springframework.web.socket.WebSocketSession;
 class SessionServiceTest {
 
     private SessionService sessionService;
+    private PersistenceService persistenceService;
 
     @BeforeEach
     void setUp() {
-        sessionService = new SessionService();
+        persistenceService = mock(PersistenceService.class);
+        sessionService = new SessionService(persistenceService);
     }
 
     private UserConnection createMockUser(String id) {
@@ -42,6 +45,7 @@ class SessionServiceTest {
         assertEquals("a1", session.getUserAId());
         assertEquals("b1", session.getUserBId());
         assertEquals(MatchSession.Status.ACTIVE, session.getStatus());
+        verify(persistenceService).persistSessionCreated(session);
     }
 
     @Test
@@ -89,10 +93,9 @@ class SessionServiceTest {
         assertTrue(ended.isPresent());
         assertEquals(MatchSession.Status.ENDED, ended.get().getStatus());
         assertNotNull(ended.get().getEndedAt());
-
-        // Both users should be removed from session tracking
         assertFalse(sessionService.isInSession("a1"));
         assertFalse(sessionService.isInSession("b1"));
+        verify(persistenceService).persistSessionEnded(ended.get());
     }
 
     @Test

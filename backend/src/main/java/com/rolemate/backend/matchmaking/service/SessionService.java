@@ -2,6 +2,7 @@ package com.rolemate.backend.matchmaking.service;
 
 import com.rolemate.backend.matchmaking.model.MatchSession;
 import com.rolemate.backend.matchmaking.model.UserConnection;
+import com.rolemate.backend.persistence.service.PersistenceService;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -13,19 +14,28 @@ import org.springframework.stereotype.Service;
 
 /**
  * Manages the lifecycle of match sessions.
- * Owns the session storage maps and provides clean CRUD operations
+ * Owns the in-memory session storage maps and provides clean CRUD operations
  * for creating, querying, and ending sessions.
+ *
+ * <p>Session metadata is persisted asynchronously via {@link PersistenceService}
+ * for historical tracking and analytics.
  */
 @Service
 public class SessionService {
 
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
+    private final PersistenceService persistenceService;
+
     /** Active sessions indexed by session ID. */
     private final Map<String, MatchSession> sessionsById = new ConcurrentHashMap<>();
 
     /** Reverse lookup: user ID → session ID for quick session resolution. */
     private final Map<String, String> sessionIdByUserId = new ConcurrentHashMap<>();
+
+    public SessionService(PersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
+    }
 
     /**
      * Creates a new active session pairing two users under the given role.
@@ -45,6 +55,10 @@ public class SessionService {
 
         log.info("Session created: sessionId={}, role={}, userA={}, userB={}",
                 sessionId, role, userA.getUserId(), userB.getUserId());
+
+        // Persist asynchronously — does not block the matchmaking flow
+        persistenceService.persistSessionCreated(session);
+
         return session;
     }
 
@@ -72,6 +86,10 @@ public class SessionService {
 
         session.end();
         log.info("Session ended: sessionId={}, initiator={}, partner={}", sessionId, userId, partnerId);
+
+        // Persist end-of-session metadata asynchronously
+        persistenceService.persistSessionEnded(session);
+
         return Optional.of(session);
     }
 
