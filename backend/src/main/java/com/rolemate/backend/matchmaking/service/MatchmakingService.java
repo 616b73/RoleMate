@@ -9,6 +9,7 @@ import com.rolemate.backend.matchmaking.model.RoleCategory;
 import com.rolemate.backend.matchmaking.model.ServerEvent;
 import com.rolemate.backend.matchmaking.model.ServerEventType;
 import com.rolemate.backend.matchmaking.model.UserConnection;
+import com.rolemate.backend.signaling.service.SignalingService;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -46,6 +47,7 @@ public class MatchmakingService {
 
     private final ObjectMapper objectMapper;
     private final SessionService sessionService;
+    private final SignalingService signalingService;
 
     /** All currently connected users, keyed by WebSocket session ID. */
     private final Map<String, UserConnection> connectedUsers = new ConcurrentHashMap<>();
@@ -59,9 +61,11 @@ public class MatchmakingService {
     /** Global lock for cross-role operations (disconnect cleanup). */
     private final ReentrantLock globalLock = new ReentrantLock();
 
-    public MatchmakingService(ObjectMapper objectMapper, SessionService sessionService) {
+    public MatchmakingService(ObjectMapper objectMapper, SessionService sessionService,
+                              SignalingService signalingService) {
         this.objectMapper = objectMapper;
         this.sessionService = sessionService;
+        this.signalingService = signalingService;
     }
 
     /**
@@ -93,6 +97,12 @@ public class MatchmakingService {
             case JOIN_QUEUE -> joinQueue(webSocketSession, event);
             case SEND_MESSAGE -> sendChatMessage(webSocketSession, event);
             case NEXT_USER -> handleNextUser(webSocketSession);
+            // WebRTC signaling — relay to matched partner
+            case WEBRTC_OFFER -> signalingService.relayOffer(webSocketSession, event, connectedUsers);
+            case WEBRTC_ANSWER -> signalingService.relayAnswer(webSocketSession, event, connectedUsers);
+            case ICE_CANDIDATE -> signalingService.relayIceCandidate(webSocketSession, event, connectedUsers);
+            case VIDEO_READY -> signalingService.notifyVideoReady(webSocketSession, connectedUsers);
+            case VIDEO_ENDED -> signalingService.notifyVideoEnded(webSocketSession, connectedUsers);
             default -> sendError(webSocketSession, "Unsupported event type: " + event.getType());
         }
     }

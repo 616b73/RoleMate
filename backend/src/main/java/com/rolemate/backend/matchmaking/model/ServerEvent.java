@@ -1,5 +1,9 @@
 package com.rolemate.backend.matchmaking.model;
 
+/**
+ * Represents an outbound event sent from the server to a WebSocket client.
+ * Supports matchmaking events and WebRTC signaling relay events.
+ */
 public class ServerEvent {
 
     private ServerEventType type;
@@ -8,6 +12,12 @@ public class ServerEvent {
     private String role;
     private String content;
     private String message;
+
+    // WebRTC signaling fields
+    private String sdp;
+    private String candidate;
+    private String sdpMid;
+    private Integer sdpMLineIndex;
 
     public ServerEvent() {
     }
@@ -63,5 +73,37 @@ public class ServerEvent {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public String getSdp() {
+        return sdp;
+    }
+
+    public void setSdp(String sdp) {
+        this.sdp = sdp;
+    }
+
+    public String getCandidate() {
+        return candidate;
+    }
+
+    public void setCandidate(String candidate) {
+        this.candidate = candidate;
+    }
+
+    public String getSdpMid() {
+        return sdpMid;
+    }
+
+    public void setSdpMid(String sdpMid) {
+        this.sdpMid = sdpMid;
+    }
+
+    public Integer getSdpMLineIndex() {
+        return sdpMLineIndex;
+    }
+
+    public void setSdpMLineIndex(Integer sdpMLineIndex) {
+        this.sdpMLineIndex = sdpMLineIndex;
     }
 }

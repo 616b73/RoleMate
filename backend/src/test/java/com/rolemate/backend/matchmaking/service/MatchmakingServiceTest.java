@@ -5,6 +5,8 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rolemate.backend.config.JacksonConfig;
+import com.rolemate.backend.persistence.service.PersistenceService;
+import com.rolemate.backend.signaling.service.SignalingService;
 import java.io.IOException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,8 +23,10 @@ class MatchmakingServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new JacksonConfig().objectMapper();
-        sessionService = new SessionService();
-        matchmakingService = new MatchmakingService(objectMapper, sessionService);
+        PersistenceService persistenceService = mock(PersistenceService.class);
+        sessionService = new SessionService(persistenceService);
+        SignalingService signalingService = new SignalingService(sessionService, objectMapper);
+        matchmakingService = new MatchmakingService(objectMapper, sessionService, signalingService);
     }
 
     private WebSocketSession createMockSession(String id) {
