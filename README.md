@@ -1,58 +1,38 @@
-# RoleMate — Random Mock Interview Platform
+# RoleMate
 
-## Overview
+RoleMate is a platform designed to help job seekers practice interviews by instantly connecting them with other candidates preparing for similar roles.
 
-**RoleMate** is a platform designed to help job seekers practice interviews by instantly connecting them with other candidates preparing for similar roles.
+## How to Run the Project
 
-Preparing for interviews can often feel isolating. Many candidates struggle to find people who are equally invested in practicing mock interviews or discussing technical concepts. RoleMate aims to solve this problem by creating a space where candidates can easily connect with peers who share the same goals.
+### Prerequisites
+- **Java 25** or higher
+- **Maven 3.9+**
+- **PostgreSQL 18** (Required for the Phase 2 persistence features)
 
-Users simply select the role or domain they are preparing for—such as Backend Development, Frontend Development, Data Science, or Design—and the platform matches them with another candidate preparing for the same field.
+### Running the Backend Locally
+1. Clone the repository and navigate to the project directory.
+2. Ensure you have a local instance of PostgreSQL running and properly configured in `backend/src/main/resources/application.properties` (if applicable).
+3. Navigate into the backend folder:
+   ```bash
+   cd backend
+   ```
+4. Run the application using the Spring Boot Maven Plugin:
+   ```bash
+   mvn spring-boot:run
+   ```
+   The backend service will start up and run on `localhost:8080`.
 
-Once matched, the two users can have a short conversation to conduct a mock interview, discuss concepts, or share preparation strategies.
+### Running Tests
+To run the automated tests (unit and integration), execute:
+```bash
+mvn test
+```
 
----
+### Endpoints to Verify
+Once the application is running, you can verify it by hitting these endpoints:
+- **Health Check**: `http://localhost:8080/api/health`
+- **Supported Roles**: `http://localhost:8080/api/roles`
+- **Queue Status**: `http://localhost:8080/api/queue/status`
+- **WebSocket Connection**: Connect via WebSocket to `ws://localhost:8080/ws/matchmaking`
 
-## The Idea
-
-RoleMate is inspired by the concept of random matching platforms, but instead of casual conversations, the focus is on **career preparation and peer learning**.
-
-The goal is to create an environment where candidates can:
-
-* Practice mock interviews with real people
-* Improve communication and problem-solving skills
-* Gain confidence before actual interviews
-* Learn from others preparing for similar roles
-
-By lowering the barrier to finding a mock interview partner, RoleMate encourages consistent practice and collaborative learning.
-
----
-
-## Why This Platform Exists
-
-Many candidates preparing for jobs face a common problem: they want to practice interviews, but they don’t have access to people who can regularly conduct mock sessions with them.
-
-Existing options are often limited:
-
-* Practicing alone with questions and notes
-* Asking friends who may not have the same technical background
-* Paying for professional mock interview services
-
-RoleMate introduces a simple solution: **connect candidates with each other instantly** so they can practice together.
-
----
-
-## The Core Value
-
-The core idea behind RoleMate is simple:
-
-**Anyone preparing for interviews should be able to find a practice partner within seconds.**
-
-Instead of searching for people, scheduling calls, or relying on personal networks, the platform makes it easy to start a mock interview immediately.
-
----
-
-## Vision
-
-The long-term vision for RoleMate is to create a global peer network where candidates from different backgrounds can collaborate, learn from each other, and grow together during the job preparation process.
-
-The platform aims to make interview preparation more interactive, accessible, and community-driven.
+> **Note on Documentation**: For comprehensive developer guides, project roadmap, and the product overview, refer to the local `rolemate documentation/` folder (excluded from version control).
