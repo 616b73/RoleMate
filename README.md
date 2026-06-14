@@ -35,4 +35,4 @@ Once the application is running, you can verify it by hitting these endpoints:
 - **Queue Status**: `http://localhost:8080/api/queue/status`
 - **WebSocket Connection**: Connect via WebSocket to `ws://localhost:8080/ws/matchmaking`
 
-> **Note on Documentation**: For comprehensive developer guides, project roadmap, and the product overview, refer to the local `rolemate documentation/` folder (excluded from version control).
+> **Note on Documentation**: For comprehensive developer guides, project roadmap, and the product overview, refer to the local `rolemate documentation/` folder.

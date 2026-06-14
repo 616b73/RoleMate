@@ -1,0 +1,81 @@
+.waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-lg);
+}
+
+.waiting__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  text-align: center;
+  max-width: 400px;
+}
+
+/* ── Animated Dots ── */
+.waiting__spinner {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+}
+
+.waiting__dots {
+  display: flex;
+  gap: 8px;
+}
+
+.waiting__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+/* ── Text ── */
+.waiting__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.waiting__role {
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.waiting__role strong {
+  color: var(--accent-primary-hover);
+}
+
+.waiting__hint {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* ── Cancel Button ── */
+.waiting__cancel {
+  padding: var(--space-sm) var(--space-xl);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all var(--transition-normal);
+}
+
+.waiting__cancel:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
