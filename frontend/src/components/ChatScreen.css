@@ -24,6 +24,12 @@
   gap: var(--space-md);
 }
 
+.chat__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 .chat__role-badge {
   padding: var(--space-xs) var(--space-md);
   background: var(--accent-glow);
@@ -48,6 +54,35 @@
   border-radius: 50%;
   background: var(--color-success);
   animation: pulse 2s infinite;
+}
+
+/* ── Video Toggle Button ── */
+.chat__video-btn {
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all var(--transition-normal);
+}
+
+.chat__video-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.chat__video-btn--active {
+  color: var(--color-danger);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.chat__video-btn--active:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: rgba(248, 113, 113, 0.1);
 }
 
 .chat__next-btn {

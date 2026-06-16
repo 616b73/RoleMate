@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useWebRTC } from './hooks/useWebRTC';
 import RoleSelect from './components/RoleSelect';
 import WaitingScreen from './components/WaitingScreen';
 import ChatScreen from './components/ChatScreen';
@@ -22,6 +23,9 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [partnerId, setPartnerId] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+
+  // Ref to hold the WebRTC signaling handler (avoids circular dependency)
+  const webrtcHandlerRef = useRef(null);
 
   // Handle incoming server events
   const handleServerEvent = useCallback((event) => {
@@ -76,6 +80,17 @@ export default function App() {
         ]);
         break;
 
+      // WebRTC signaling events — forward to the WebRTC hook
+      case 'WEBRTC_OFFER':
+      case 'WEBRTC_ANSWER':
+      case 'ICE_CANDIDATE':
+      case 'PARTNER_VIDEO_READY':
+      case 'PARTNER_VIDEO_ENDED':
+        if (webrtcHandlerRef.current) {
+          webrtcHandlerRef.current(event);
+        }
+        break;
+
       default:
         console.log('[App] Unhandled event:', event.type);
     }
@@ -83,7 +98,25 @@ export default function App() {
 
   const { sendEvent, connectionStatus } = useWebSocket(handleServerEvent);
 
+  // WebRTC hook — uses sendEvent to relay signaling via WebSocket
+  const {
+    localStream,
+    remoteStream,
+    isVideoActive,
+    isPartnerVideoActive,
+    videoError,
+    startVideo,
+    stopVideo,
+    handleSignalingEvent,
+    cleanupConnection,
+  } = useWebRTC(sendEvent);
+
+  // Store the signaling handler in the ref so the event callback can access it
+  webrtcHandlerRef.current = handleSignalingEvent;
+
   const resetToRoleSelect = () => {
+    // Clean up WebRTC before resetting
+    cleanupConnection();
     setScreen(SCREENS.ROLE_SELECT);
     setSelectedRole(null);
     setMessages([]);
@@ -113,6 +146,8 @@ export default function App() {
   };
 
   const handleNextPartner = () => {
+    // Clean up video before ending session
+    cleanupConnection();
     sendEvent({ type: 'NEXT_USER' });
   };
 
@@ -143,6 +178,14 @@ export default function App() {
           messages={messages}
           onSendMessage={handleSendMessage}
           onNextPartner={handleNextPartner}
+          // WebRTC props
+          localStream={localStream}
+          remoteStream={remoteStream}
+          isVideoActive={isVideoActive}
+          isPartnerVideoActive={isPartnerVideoActive}
+          videoError={videoError}
+          onStartVideo={startVideo}
+          onStopVideo={stopVideo}
         />
       )}
     </>

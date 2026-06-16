@@ -1,7 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
+import VideoPanel from './VideoPanel';
 import './ChatScreen.css';
 
-export default function ChatScreen({ role, partnerId, sessionId, messages, onSendMessage, onNextPartner }) {
+export default function ChatScreen({
+  role,
+  partnerId,
+  sessionId,
+  messages,
+  onSendMessage,
+  onNextPartner,
+  // WebRTC props
+  localStream,
+  remoteStream,
+  isVideoActive,
+  isPartnerVideoActive,
+  videoError,
+  onStartVideo,
+  onStopVideo,
+}) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -25,6 +41,8 @@ export default function ChatScreen({ role, partnerId, sessionId, messages, onSen
     setInput('');
   };
 
+  const showVideoPanel = isVideoActive || isPartnerVideoActive || videoError;
+
   return (
     <div className="chat animate-in">
       {/* Header */}
@@ -36,14 +54,33 @@ export default function ChatScreen({ role, partnerId, sessionId, messages, onSen
             Connected
           </span>
         </div>
-        <button
-          className="chat__next-btn"
-          onClick={onNextPartner}
-          id="next-partner-btn"
-        >
-          Next Partner →
-        </button>
+        <div className="chat__header-actions">
+          <button
+            className={`chat__video-btn ${isVideoActive ? 'chat__video-btn--active' : ''}`}
+            onClick={isVideoActive ? onStopVideo : onStartVideo}
+            id="video-toggle-btn"
+          >
+            {isVideoActive ? '🔴 Stop Video' : '📹 Start Video'}
+          </button>
+          <button
+            className="chat__next-btn"
+            onClick={onNextPartner}
+            id="next-partner-btn"
+          >
+            Next Partner →
+          </button>
+        </div>
       </div>
+
+      {/* Video Panel */}
+      {showVideoPanel && (
+        <VideoPanel
+          localStream={localStream}
+          remoteStream={remoteStream}
+          isPartnerVideoActive={isPartnerVideoActive}
+          videoError={videoError}
+        />
+      )}
 
       {/* Messages */}
       <div className="chat__messages" id="chat-messages">
