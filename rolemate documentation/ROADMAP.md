@@ -224,11 +224,29 @@ com.rolemate.backend
 
 ---
 
+### Milestone 5: Frontend Integration & WebRTC Client
+
+**Goal:** Build a user-facing client to consume the matchmaking API and establish real-time video calls.
+
+**What was done:**
+- Scaffolded a new React application using Vite (`frontend/`).
+- Connected the UI to the backend WebSocket API.
+- Implemented role selection and queue joining.
+- Developed `ChatScreen` for text-based messaging between matched peers.
+- Built a robust `useWebRTC` hook to manage RTCPeerConnection, ICE candidates, and local/remote media streams.
+- Integrated `VideoPanel` to display the video call seamlessly above the chat interface.
+- Verified the end-to-end flow using browser testing: successful matching, video establishment, concurrent text chat, and clean disconnections.
+
+**Key decisions:**
+- **React + Vite** — standard modern stack for fast frontend development.
+- **Custom `useWebRTC` hook** — encapsulates all the complex WebRTC event handling and state management away from the UI components.
+- **Seamless Video/Chat Integration** — text chat remains functional during video calls, maintaining the core MVP experience while adding media capabilities.
+
+---
+
 ## Next Steps
 
 ### 🚧 Immediate Objectives
-- **Frontend Client:** Build a minimal web client (React or Vanilla JS) to connect with the backend WebSocket API — role selection UI, chat window, next partner button.
-- **WebRTC Browser Integration:** Complete the video call flow in the frontend using the backend signaling that's now in place — camera/mic access, SDP exchange, peer connection, video rendering.
 - **STUN/TURN Configuration:** Configure Google's public STUN server for NAT traversal. Evaluate TURN server options for restrictive network fallback.
 
 ### ⏳ Future Enhancements
