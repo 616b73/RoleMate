@@ -4,6 +4,7 @@ public enum ServerEventType {
     // Matchmaking
     CONNECTED,
     QUEUED,
+    QUEUE_LEFT,
     MATCH_FOUND,
     RECEIVE_MESSAGE,
     SESSION_ENDED,

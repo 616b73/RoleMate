@@ -151,4 +151,32 @@ class MatchmakingServiceTest {
         matchmakingService.registerConnection(createMockSession("u1"));
         assertEquals(1, matchmakingService.getConnectedUserCount());
     }
+
+    @Test
+    void leaveQueue_removesFromQueue_sendsQueueLeft() throws IOException {
+        WebSocketSession s1 = createMockSession("u1");
+        WebSocketSession s2 = createMockSession("u2");
+        matchmakingService.registerConnection(s1);
+        matchmakingService.registerConnection(s2);
+
+        // u1 joins queue
+        matchmakingService.handleEvent(s1, "{\"type\":\"JOIN_QUEUE\",\"role\":\"Backend Engineering\"}");
+        verify(s1).sendMessage(argThat(msg ->
+                ((TextMessage) msg).getPayload().contains("\"type\":\"QUEUED\"")));
+
+        // u1 leaves queue
+        matchmakingService.handleEvent(s1, "{\"type\":\"LEAVE_QUEUE\"}");
+        verify(s1).sendMessage(argThat(msg ->
+                ((TextMessage) msg).getPayload().contains("\"type\":\"QUEUE_LEFT\"")));
+
+        // u2 joins same role — should NOT match (u1 already left)
+        matchmakingService.handleEvent(s2, "{\"type\":\"JOIN_QUEUE\",\"role\":\"Backend Engineering\"}");
+        verify(s1, never()).sendMessage(argThat(msg ->
+                ((TextMessage) msg).getPayload().contains("\"type\":\"MATCH_FOUND\"")));
+        verify(s2, never()).sendMessage(argThat(msg ->
+                ((TextMessage) msg).getPayload().contains("\"type\":\"MATCH_FOUND\"")));
+
+        // u1 is still connected (no disconnect)
+        assertEquals(2, matchmakingService.getConnectedUserCount());
+    }
 }

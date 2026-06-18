@@ -85,5 +85,10 @@ export function useWebSocket(onEvent) {
     }
   }, []);
 
-  return { sendEvent, connectionStatus };
+  const reconnect = useCallback(() => {
+    clearTimeout(reconnectTimer.current);
+    connect();
+  }, [connect]);
+
+  return { sendEvent, connectionStatus, reconnect };
 }

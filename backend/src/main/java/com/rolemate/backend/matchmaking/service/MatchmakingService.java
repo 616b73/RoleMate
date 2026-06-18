@@ -95,6 +95,7 @@ public class MatchmakingService {
 
         switch (event.getType()) {
             case JOIN_QUEUE -> joinQueue(webSocketSession, event);
+            case LEAVE_QUEUE -> leaveQueue(webSocketSession);
             case SEND_MESSAGE -> sendChatMessage(webSocketSession, event);
             case NEXT_USER -> handleNextUser(webSocketSession);
             // WebRTC signaling — relay to matched partner
@@ -170,6 +171,21 @@ public class MatchmakingService {
         } finally {
             roleLock.unlock();
         }
+    }
+
+    private void leaveQueue(WebSocketSession webSocketSession) throws IOException {
+        UserConnection connection = connectedUsers.get(webSocketSession.getId());
+        if (connection == null) {
+            sendError(webSocketSession, "Connection not registered");
+            return;
+        }
+
+        removeFromWaitingQueues(connection.getUserId());
+
+        log.info("User left queue: userId={}, role={}", connection.getUserId(), connection.getRole());
+
+        ServerEvent event = new ServerEvent(ServerEventType.QUEUE_LEFT, "Removed from queue");
+        sendEvent(webSocketSession, event);
     }
 
     private void attemptMatch(String role) throws IOException {
