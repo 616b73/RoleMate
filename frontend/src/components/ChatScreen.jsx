@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import VideoPanel from './VideoPanel';
+import SessionTimer from './SessionTimer';
 import './ChatScreen.css';
 
 export default function ChatScreen({
@@ -9,6 +10,7 @@ export default function ChatScreen({
   messages,
   onSendMessage,
   onNextPartner,
+  matchedAt,
   // WebRTC props
   localStream,
   remoteStream,
@@ -49,6 +51,7 @@ export default function ChatScreen({
       <div className="chat__header">
         <div className="chat__header-info">
           <span className="chat__role-badge">{role}</span>
+          <SessionTimer matchedAt={matchedAt} />
           <span className="chat__status">
             <span className="chat__status-dot"></span>
             Connected
