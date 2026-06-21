@@ -1,0 +1,59 @@
+.connection-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.85);
+  backdrop-filter: blur(8px);
+  animation: fadeIn var(--transition-fast) ease;
+}
+
+.connection-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-2xl);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  max-width: 360px;
+  width: 90%;
+}
+
+.connection-overlay__icon {
+  font-size: 2.5rem;
+  animation: pulse 2s infinite;
+}
+
+.connection-overlay__title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.connection-overlay__text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.connection-overlay__btn {
+  padding: var(--space-sm) var(--space-xl);
+  background: var(--accent-primary);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-normal);
+}
+
+.connection-overlay__btn:hover {
+  background: var(--accent-primary-hover);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
