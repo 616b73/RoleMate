@@ -1,15 +1,19 @@
 import { useState, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useWebRTC } from './hooks/useWebRTC';
+import { useSoundEffects } from './hooks/useSoundEffects';
 import RoleSelect from './components/RoleSelect';
 import WaitingScreen from './components/WaitingScreen';
 import ChatScreen from './components/ChatScreen';
+import FeedbackScreen from './components/FeedbackScreen';
+import ConnectionOverlay from './components/ConnectionOverlay';
 
 // Screen states
 const SCREENS = {
   ROLE_SELECT: 'ROLE_SELECT',
   WAITING: 'WAITING',
   CHAT: 'CHAT',
+  FEEDBACK: 'FEEDBACK',
 };
 
 function formatTime() {
@@ -23,9 +27,16 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [partnerId, setPartnerId] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const [matchedAt, setMatchedAt] = useState(null);
+  const [sessionDuration, setSessionDuration] = useState(0);
 
   // Ref to hold the WebRTC signaling handler (avoids circular dependency)
   const webrtcHandlerRef = useRef(null);
+
+  // Sound effects
+  const { playMatchSound, playMessageSound } = useSoundEffects();
+  const soundsRef = useRef({ playMatchSound, playMessageSound });
+  soundsRef.current = { playMatchSound, playMessageSound };
 
   // Handle incoming server events
   const handleServerEvent = useCallback((event) => {
@@ -42,7 +53,9 @@ export default function App() {
         setPartnerId(event.partnerId);
         setSessionId(event.sessionId);
         setMessages([]);
+        setMatchedAt(Date.now());
         setScreen(SCREENS.CHAT);
+        soundsRef.current.playMatchSound();
         break;
 
       case 'RECEIVE_MESSAGE':
@@ -50,26 +63,15 @@ export default function App() {
           ...prev,
           { type: 'received', text: event.content, time: formatTime() },
         ]);
+        soundsRef.current.playMessageSound();
         break;
 
       case 'SESSION_ENDED':
-        setMessages((prev) => [
-          ...prev,
-          { type: 'system', text: 'Session ended. Returning to role selection...' },
-        ]);
-        setTimeout(() => {
-          resetToRoleSelect();
-        }, 1500);
+        transitionToFeedback();
         break;
 
       case 'PARTNER_LEFT':
-        setMessages((prev) => [
-          ...prev,
-          { type: 'system', text: 'Your partner has left. Returning to role selection...' },
-        ]);
-        setTimeout(() => {
-          resetToRoleSelect();
-        }, 2000);
+        transitionToFeedback();
         break;
 
       case 'ERROR':
@@ -91,12 +93,17 @@ export default function App() {
         }
         break;
 
+      case 'QUEUE_LEFT':
+        console.log('[App] Left queue');
+        resetToRoleSelect();
+        break;
+
       default:
         console.log('[App] Unhandled event:', event.type);
     }
   }, []);
 
-  const { sendEvent, connectionStatus } = useWebSocket(handleServerEvent);
+  const { sendEvent, connectionStatus, reconnect } = useWebSocket(handleServerEvent);
 
   // WebRTC hook — uses sendEvent to relay signaling via WebSocket
   const {
@@ -114,14 +121,23 @@ export default function App() {
   // Store the signaling handler in the ref so the event callback can access it
   webrtcHandlerRef.current = handleSignalingEvent;
 
-  const resetToRoleSelect = () => {
-    // Clean up WebRTC before resetting
+  const transitionToFeedback = () => {
     cleanupConnection();
+    // Calculate session duration
+    if (matchedAt) {
+      setSessionDuration(Math.floor((Date.now() - matchedAt) / 1000));
+    }
+    setScreen(SCREENS.FEEDBACK);
+  };
+
+  const resetToRoleSelect = () => {
     setScreen(SCREENS.ROLE_SELECT);
     setSelectedRole(null);
     setMessages([]);
     setPartnerId(null);
     setSessionId(null);
+    setMatchedAt(null);
+    setSessionDuration(0);
   };
 
   // ── Actions ──
@@ -132,9 +148,7 @@ export default function App() {
   };
 
   const handleCancelQueue = () => {
-    resetToRoleSelect();
-    // Reconnect to get a fresh session since there's no LEAVE_QUEUE event
-    window.location.reload();
+    sendEvent({ type: 'LEAVE_QUEUE' });
   };
 
   const handleSendMessage = (text) => {
@@ -155,12 +169,8 @@ export default function App() {
 
   return (
     <>
-      {/* Connection indicator */}
-      {connectionStatus !== 'connected' && (
-        <div className="connection-bar" id="connection-status">
-          {connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected — reconnecting...'}
-        </div>
-      )}
+      {/* Connection overlay */}
+      <ConnectionOverlay status={connectionStatus} onReconnect={reconnect} />
 
       {screen === SCREENS.ROLE_SELECT && (
         <RoleSelect onJoinQueue={handleJoinQueue} />
@@ -178,6 +188,7 @@ export default function App() {
           messages={messages}
           onSendMessage={handleSendMessage}
           onNextPartner={handleNextPartner}
+          matchedAt={matchedAt}
           // WebRTC props
           localStream={localStream}
           remoteStream={remoteStream}
@@ -186,6 +197,15 @@ export default function App() {
           videoError={videoError}
           onStartVideo={startVideo}
           onStopVideo={stopVideo}
+        />
+      )}
+
+      {screen === SCREENS.FEEDBACK && (
+        <FeedbackScreen
+          sessionId={sessionId}
+          role={selectedRole}
+          duration={sessionDuration}
+          onComplete={resetToRoleSelect}
         />
       )}
     </>

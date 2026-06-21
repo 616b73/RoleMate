@@ -244,13 +244,73 @@ com.rolemate.backend
 
 ---
 
+### Milestone 6: UX Polish & Session Experience
+
+**Goal:** Transform the raw matchmaking loop into a polished user experience with proper state transitions, audio feedback, error recovery, and post-session feedback.
+
+**What was done:**
+
+**Feature 1 — LEAVE_QUEUE event:**
+- Added `LEAVE_QUEUE` client event and `QUEUE_LEFT` server event to the protocol.
+- Implemented `leaveQueue()` handler in `MatchmakingService` — removes user from queue without disconnecting.
+- Fixed the frontend Cancel button which previously used `window.location.reload()` — now sends a proper WebSocket event.
+- Added test verifying queue removal and that the user remains connected.
+
+**Feature 2 — Session Timer:**
+- Created `SessionTimer` component using `useEffect` + `setInterval` — counts up from 00:00 in MM:SS format.
+- Rendered in the chat header between role badge and action buttons.
+- Timer starts on `MATCH_FOUND` and resets on next partner/session end.
+- Uses `font-variant-numeric: tabular-nums` for stable width during counting.
+
+**Feature 3 — Notification Sounds:**
+- Created `useSoundEffects` hook using the Web Audio API — no external audio files needed.
+- `playMatchSound()` — ascending C5→E5 two-tone chime on match found.
+- `playMessageSound()` — subtle A5 pop on message received.
+- Gain envelope (fade in/out) prevents audio clicks.
+
+**Feature 4 — Connection Error Overlay:**
+- Created `ConnectionOverlay` component — full-screen semi-transparent overlay with backdrop blur.
+- Shows "Connection Lost" with auto-reconnect countdown and manual "Reconnect Now" button.
+- Exposed `reconnect()` function from `useWebSocket` hook.
+- Replaced the old minimal connection-bar banner.
+
+**Feature 5 — End-of-Session Feedback:**
+- Created Flyway V2 migration: `session_feedback` table (FK to `match_sessions`, stores GOOD/BAD rating).
+- Created `FeedbackRecord` entity and `FeedbackRecordRepository`.
+- Created `FeedbackController` REST endpoint (`POST /api/feedback`) with validation.
+- Created `FeedbackScreen` component — shown between session end and role selection.
+- Displays session role badge, duration, thumbs up/down buttons, and skip option.
+- Posts feedback via HTTP (not WebSocket) since it's post-session.
+- Updated app state machine: CHAT → FEEDBACK → ROLE_SELECT.
+
+**Key decisions:**
+- **Web Audio API over audio files** — zero network requests, no asset management, works offline.
+- **REST for feedback** — the WebSocket session context may not map to the match session after it ends, so a stateless POST is cleaner.
+- **Ref pattern for sounds/signaling** — avoids stale closures in `useCallback` without adding dependencies that would cause re-renders.
+- **LEAVE_QUEUE as a first-class event** — the `window.location.reload()` hack was unacceptable; proper protocol events keep the WebSocket connection alive.
+
+**Database schema at this point:**
+```sql
+-- V1
+match_sessions (id, role, user_a_id, user_b_id, session_type, status, created_at, ended_at, duration_seconds)
+
+-- V2
+session_feedback (id SERIAL, session_id FK, user_id, rating, created_at)
+```
+
+**Tests:** 37 backend tests passing (36 existing + 1 new LEAVE_QUEUE test).
+
+---
+
 ## Next Steps
 
 ### 🚧 Immediate Objectives
-- **STUN/TURN Configuration:** Configure Google's public STUN server for NAT traversal. Evaluate TURN server options for restrictive network fallback.
+- **STUN/TURN Configuration:** Evaluate TURN server options for restrictive network fallback (STUN is already configured with Google's public servers).
+- **Containerization:** Dockerfile for backend + frontend, Docker Compose for full stack with PostgreSQL.
 
 ### ⏳ Future Enhancements
 - **Enhanced Matching:** Sub-category roles, experience level filters (junior/mid/senior), topic preferences (system design vs. behavioral vs. DSA).
-- **User Experience:** Session timer, end-of-session partner feedback (thumbs up/down), onboarding flow.
-- **Production Readiness:** Containerization (Docker + Docker Compose), CI/CD pipeline, rate limiting, observability/metrics.
+- **User Experience:** Onboarding flow, typing indicators, read receipts.
+- **Production Readiness:** CI/CD pipeline, rate limiting, observability/metrics.
 - **Authentication:** Optional accounts and persistent user identity (when features require it).
+
