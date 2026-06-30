@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 
-const WS_URL = 'ws://localhost:8080/ws/matchmaking';
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/matchmaking`;
 const RECONNECT_DELAY = 3000;
 
 /**

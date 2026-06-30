@@ -1,0 +1,38 @@
+services:
+  # ── PostgreSQL Database ──
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: rolemate
+      POSTGRES_USER: rolemate
+      POSTGRES_PASSWORD: rolemate
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rolemate"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Spring Boot Backend ──
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rolemate
+      SPRING_DATASOURCE_USERNAME: rolemate
+      SPRING_DATASOURCE_PASSWORD: rolemate
+      ROLEMATE_WEBSOCKET_ALLOWED_ORIGINS: "*"
+
+  # ── React Frontend (nginx) ──
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

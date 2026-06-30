@@ -302,15 +302,100 @@ session_feedback (id SERIAL, session_id FK, user_id, rating, created_at)
 
 ---
 
+### Milestone 7: Docker Containerization
+
+**Goal:** Package the entire RoleMate stack into Docker containers so the application runs with a single `docker compose up` command, eliminating manual setup of Java, Node, PostgreSQL, and port configuration.
+
+**What was done:**
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────┐
+│                  docker-compose.yml                  │
+│                                                     │
+│  ┌──────────┐   ┌──────────────┐   ┌─────────────┐ │
+│  │ frontend │   │   backend    │   │  postgres   │ │
+│  │ (nginx)  │──►│ (Spring Boot)│──►│  (DB)       │ │
+│  │ :80      │   │  :8080       │   │  :5432      │ │
+│  └──────────┘   └──────────────┘   └─────────────┘ │
+│                                                     │
+│  nginx reverse-proxies /api/* and /ws/*             │
+│  to the backend container, serves static            │
+│  files for everything else                          │
+└─────────────────────────────────────────────────────┘
+```
+
+**Dynamic URL Configuration:**
+- Replaced hardcoded `ws://localhost:8080/ws/matchmaking` in `useWebSocket.js` with a dynamic URL derived from `window.location` — works in dev, Docker, and production.
+- Replaced hardcoded `http://localhost:8080` API base in `FeedbackScreen.jsx` with relative URLs — nginx proxies them.
+- Added Vite dev proxy in `vite.config.js` (`/api` and `/ws` forwarded to localhost:8080) so local development still works seamlessly.
+
+**Backend Dockerfile (multi-stage):**
+- Stage 1: `maven:3.9-eclipse-temurin-25` — compiles and packages the JAR. Dependencies cached in a separate layer for fast rebuilds.
+- Stage 2: `eclipse-temurin:25-jre-alpine` — runs the JAR. Final image ~101MB compressed (vs ~600MB with full JDK).
+- Health check using `wget` against `/api/health`.
+
+**Frontend Dockerfile (multi-stage):**
+- Stage 1: `node:22-alpine` — runs `npm ci && npm run build` to produce a static `dist/` folder.
+- Stage 2: `nginx:alpine` — serves static files and acts as reverse proxy. Final image ~26MB compressed.
+
+**Nginx Configuration (`nginx.conf`):**
+- Serves React static files from `/usr/share/nginx/html`.
+- Proxies `/api/*` to `http://backend:8080` with proper headers.
+- Proxies `/ws/*` with WebSocket upgrade headers (`Upgrade`, `Connection`) and 24-hour timeout.
+- SPA fallback: returns `index.html` for unmatched routes (future React Router support).
+- Static asset caching: 1-year `Cache-Control` with `immutable` for Vite content-hashed files.
+
+**Docker Compose (`docker-compose.yml`):**
+- PostgreSQL 18 Alpine with volume at `/var/lib/postgresql` (PG 18+ changed the data directory format).
+- Backend depends on postgres with `service_healthy` condition — waits for DB before starting.
+- Frontend exposed on port 3000 → nginx port 80.
+- Environment variables override `application.properties` DB credentials.
+- Named volume `pgdata` persists database across restarts.
+
+**Key decisions:**
+- **Nginx as reverse proxy** — eliminates CORS entirely. Frontend and backend are served from the same origin. This mirrors real production deployments and was chosen over CORS headers because WebSocket CORS is unreliable across browsers.
+- **Multi-stage builds** — keep final images small (26MB frontend, 101MB backend) by separating build tools from runtime.
+- **PG 18 volume path** — PostgreSQL 18+ requires mounting at `/var/lib/postgresql` (not `/var/lib/postgresql/data`) for `pg_upgrade` compatibility. This was a breaking change in the Docker image.
+- **Dynamic URLs over env vars** — using `window.location` at runtime instead of build-time env vars means the same Docker image works in any environment without rebuilding.
+
+**How to run:**
+```bash
+# Start everything
+docker compose up --build -d
+
+# Access the app
+open http://localhost:3000
+
+# Check health
+curl http://localhost:3000/api/health
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down        # Keep data
+docker compose down -v     # Delete data volume too
+```
+
+**Image sizes:**
+| Image | Compressed | Uncompressed |
+|-------|-----------|-------------|
+| rolemate-frontend | 26MB | 93MB |
+| rolemate-backend | 101MB | 360MB |
+| postgres:18-alpine | 121MB | 433MB |
+
+---
+
 ## Next Steps
 
 ### 🚧 Immediate Objectives
-- **STUN/TURN Configuration:** Evaluate TURN server options for restrictive network fallback (STUN is already configured with Google's public servers).
-- **Containerization:** Dockerfile for backend + frontend, Docker Compose for full stack with PostgreSQL.
+- **Enhanced Matching:** Sub-category roles, experience level filters (junior/mid/senior), topic preferences.
+- **TURN Server:** Evaluate TURN options for restrictive network fallback (STUN already configured).
 
 ### ⏳ Future Enhancements
-- **Enhanced Matching:** Sub-category roles, experience level filters (junior/mid/senior), topic preferences (system design vs. behavioral vs. DSA).
 - **User Experience:** Onboarding flow, typing indicators, read receipts.
-- **Production Readiness:** CI/CD pipeline, rate limiting, observability/metrics.
+- **Production Readiness:** CI/CD pipeline (GitHub Actions), rate limiting, observability/metrics.
+- **AWS Deployment:** ECS Fargate or single EC2 with docker-compose. RDS for managed PostgreSQL, ALB for HTTPS termination.
 - **Authentication:** Optional accounts and persistent user identity (when features require it).
 

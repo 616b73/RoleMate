@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './FeedbackScreen.css';
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = '';
 
 /**
  * Post-session feedback screen.
